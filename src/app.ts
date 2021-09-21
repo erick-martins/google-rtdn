@@ -43,19 +43,19 @@ enum NotificationType {
   /**
    * A subscription has been paused.
    */
-  SUBSCRIPTION_PAUSED = 0,
+  SUBSCRIPTION_PAUSED = 10,
   /**
    * The schedule of a subscription pause has been changed.
    */
-  SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED = 1,
+  SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED = 11,
   /**
    * A subscription was revoked by the user before its expiration date.
    */
-  SUBSCRIPTION_REVOKED = 2,
+  SUBSCRIPTION_REVOKED = 12,
   /**
    *  The subscription has expired.
    */
-  SUBSCRIPTION_EXPIRED = 3,
+  SUBSCRIPTION_EXPIRED = 13,
 }
 
 type SubscriptionNotification = {
@@ -63,30 +63,28 @@ type SubscriptionNotification = {
   notificationType: NotificationType;
   purchaseToken: string;
   subscriptionId: string;
-}
+};
 
 type OneTimeProductNotification = {
   version: string;
   notificationType: NotificationType;
   purchaseToken: string;
   sku: string;
-}
+};
 
 type TestNotification = {
   version: string;
-}
+};
 
-type InAppPurchaseMessageData = {
-  testNotification: TestNotification
-} | {
-  oneTimeProductNotification: OneTimeProductNotification;
-} | {
-  subscriptionNotification: SubscriptionNotification;
-} & {
+type InAppPurchaseMessageData = (
+  | { testNotification: TestNotification }
+  | { oneTimeProductNotification: OneTimeProductNotification }
+  | { subscriptionNotification: SubscriptionNotification }
+) & {
   version: string;
   packageName: string;
   eventTimeMillis: number;
-}
+};
 
 type PubSubInAppPurchaseMessage = {
   id: number;
@@ -100,48 +98,38 @@ type PubSubInAppPurchaseMessage = {
   ack: () => void;
 }
 
-const bufferDataToObject = <T>(bufferData: Buffer, encoding: BufferEncoding = 'utf-8'): T => {
-  const str = bufferData.toString(encoding)
-  return JSON.parse(str) as T;
-}
-
   
 class App {
-  private pubSubClient: PubSub | undefined;
+  private pubSubClient: PubSub = new PubSub();;
 
-  private listenForMessages(subscriptionName: string, timeout = 60) {
-    // References an existing subscription
-    const subscription = this.pubSubClient!.subscription(subscriptionName);
-
-    // Create an event handler to handle messages
-    let messageCount = 0;
-    const messageHandler = (message: PubSubInAppPurchaseMessage) => {
-      const data: InAppPurchaseMessageData =  bufferDataToObject(message.data);
-      console.log(`Received message ${message.id}:`);
-      console.log(message);
-      console.log(`Data: ${data}`);
-      console.log(`Attributes:`);
-      console.log(message.attributes);
-      messageCount += 1;
-
-      // "Ack" (acknowledge receipt of) the message
-      message.ack();
-    };
-
-    // Listen for new messages until timeout is hit
-    subscription.on('message', messageHandler);
+  private bufferDataToObject = <T>(bufferData: Buffer, encoding: BufferEncoding = 'utf-8'): T => {
+    const str = bufferData.toString(encoding)
+    return JSON.parse(str) as T;
   }
 
-  listen(subscriptionName: string, timeout = 60) {
-    timeout = Number(timeout);
-    this.pubSubClient = new PubSub();
-    this.listenForMessages(subscriptionName, timeout);
+  private messageHandler = (message: PubSubInAppPurchaseMessage) => {
+    try {
+      const data = this.bufferDataToObject<InAppPurchaseMessageData>(message.data);
+      console.log(`Received message ${message.id}:`);
+      console.log('\tData:', data);
+      console.log('\tAttributes:', message.attributes);
+    } catch (error: any) {
+      console.error("Could not parse message data", error);
+    }
+
+    // "Ack" (acknowledge receipt of) the message
+    message.ack();
+  };
+
+  public listen(subscriptionName: string) {
+    // References an existing subscription
+    const subscription = this.pubSubClient.subscription(subscriptionName);
+
+    // Listen for new messages
+    subscription.on('message', this.messageHandler);
   }
 }
 
 const app = new App();
-
-
-
 
 app.listen(process.env.TOPIC as string);
